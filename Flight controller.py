@@ -1,10 +1,16 @@
 import time
 
+import os
+
+import csv
+
 import keyboard
 
 from vpython import * 
 
 import numpy as np
+
+import random 
 
 import math
 
@@ -17,10 +23,10 @@ def PIDyaw(kp, ki, kd, error):
     global previous_yaw_error, delta_t, integraly
     proportional = kp * error * delta_t
     
-    integraly += ki * error * delta_t
+    integraly += ki * error * 3 * delta_t
 
-    differential = kd * (error - previous_yaw_error)/delta_t
-
+    differential = kd * (error - previous_yaw_error)/ (3 * delta_t)
+    print(differential)
 
     previous_yaw_error = error
 
@@ -31,10 +37,10 @@ def PIDroll(kp, ki, kd, error):
     proportional = kp * error * delta_t
 
     
-    integralr += ki * error * delta_t
+    integralr += ki * error * 3 * delta_t
 
 
-    differential = kd * (error - previous_roll_error)/delta_t
+    differential = kd * (error - previous_roll_error)/( 3 * delta_t)
 
 
     previous_roll_error = error
@@ -51,10 +57,10 @@ def PIDpitch(kp, ki, kd, error):
    
     proportional = kp * error * delta_t
     
-    integralp += -ki * error * delta_t
+    integralp += -ki * error * 3 * delta_t
 
 
-    differential = kd * (error - previous_pitch_error)/delta_t
+    differential = kd * (error - previous_pitch_error)/(3 * delta_t)
 
  
 
@@ -113,7 +119,7 @@ def minfilter(desired_rate, motor_number):
 
 def linearisation(axis, omega, omega_naught, thrust, delta_t):
 
-    rate = moment_of_inertia[axis] * 9.81 * (omega - omega_naught) / (2 * delta_t * 70 * (10 ** -3) * (1/9.81) * (battery_voltage/4.1*2) * 40 * (10 ** -3)) - thrust * 70 * (10 ** -3) * (1/9.81)  
+    rate = moment_of_inertia[axis] * 9.81 * (omega - omega_naught) / (2 * delta_t * 70 * (10 ** -3) * (battery_voltage/4.1*2) * 40 * (10 ** -3))   
 
     return rate
 
@@ -278,7 +284,23 @@ def get_angular_acceleration(torque, moment_of_inertia):
     angular_acceleration = torque / moment_of_inertia
 
     return angular_acceleration
+
+def get_mean(data_points):
+    sum = 0
+    for i in data_points:
+        sum += i
     
+    return sum/len(data_points)
+
+# def get_samples(no_samples, quantity):
+#     global samples 
+#     if len(samples)
+    
+def cubic_prediction(p1, p2, p3, derivative):
+    np.multiply( np.inv([[p1[0] ** 3, p1[0] ** 2, p1[0], 1], [ p1[0] ** 3, p1[0] ** 2, p1[0], 1 ], [ p3[0] ], [3 *derivative[0] ]]), [p1[1], p2[1], p3[1], derivative])
+     
+    
+     
 
 
 
@@ -295,7 +317,7 @@ max_rotation_angle = {'roll':45,
 
 channel_input = {'roll':1,
                  'pitch':1,
-                 'yaw':1,
+                 'yaw':27/180,
                  'throttle':0.4,
                  'attitude_hold_mode': 1 }
 
@@ -311,7 +333,7 @@ motors = {'motor1':0,
           'motor3':0,
           'motor4':0}
 
-moment_of_inertia = {"roll":0.00007384958464,#0.000048,
+moment_of_inertia = {"roll":0.000048,
                  "pitch":0.00007384958464,
                  "yaw":0.000135168}
 
@@ -336,7 +358,9 @@ integralr = 0
 integralp = 0
 
 
-delta_t = 0.01
+delta_t = 0.1
+
+example = []
 
 
 def main():   
@@ -348,7 +372,7 @@ def main():
 
     timer = 0
 
-    delta_t = 0.05
+    delta_t = 0.001
 
 ##    pid_yaw = PIDyaw(
 ##    pid_yaw.sample_time = delta_t
@@ -361,17 +385,15 @@ def main():
 
     
     x = True
-    example = 0
+    y = True
     
-    while True:
+    while timer < 1000 * delta_t:
         ibus_decoder() # update the inputs
 
         for i in range(len(motors)):
             update_throttle(channel_input['throttle'], i+1)
 
-        
-
-        timer += 1
+        timer += delta_t
 
         
         
@@ -382,31 +404,26 @@ def main():
             previous_roll_error = error()['roll']
             previous_pitch_error = error()['pitch']
             x = False
-
-        
-        example += -0.05469449734473689    #current_angular_velocity['pitch'] * delta_t + (1/2) * current_angular_acceleration['pitch'] * (delta_t)**2
-            
-        if timer > 5:
-            timer  = 0
-            print('calculation =', current_angular_velocity['pitch'] * delta_t + (1/2) * current_angular_acceleration['pitch'] * (delta_t)**2, 'sum = ', example) 
-
-        
-            
-            
-##        pid_yaw.setpoint = desired_attitude['yaw']S
+              
+##        pid_yaw.setpoint = desired_attitude['yaw']
 ##        pid_roll.setpoint = desired_attitude['roll']
 ##        pid_pitch.setpoint = desired_attitude['pitch'] 
 ##        
-        error_runtime = error()
+        #error_runtime = error()
 
         #yaw(float(pid_yaw(current_attitude['yaw'])))
         #pitch(float(pid_pitch(current_attitude['pitch'])))
         #yaw(float(PIDyaw(10, 10, 10, error()['yaw'])))
         #roll(float(PIDroll(10, 10, 10, error()['roll'])))
-        pitch(linearisation('pitch', -PIDpitch(0.08, 0.000, 0.000, error()['pitch']), current_angular_velocity['pitch'], channel_input['throttle'], delta_t))
+
+        if math.floor(timer/delta_t) % 3 == 0:  
+            pitch(linearisation('pitch', -PIDpitch(32, 0.000, 0.000418, error()['pitch']), current_angular_velocity['pitch'], channel_input['throttle'], 3*delta_t))
+        if math.floor(timer/delta_t) % 3 == 1:
+            yaw(linearisation('yaw', -PIDyaw(100, 0.000, 0.0418, error()['yaw']), current_angular_velocity['yaw'], channel_input['throttle'], 3*delta_t))
+        if math.floor(timer/delta_t) % 3 == 2:
+            roll(linearisation('roll', -PIDroll(80, 0.000, 0.0318, error()['roll']), current_angular_velocity['roll'], channel_input['throttle'], 3*delta_t))
         
-        
-        
+       # example.append([timer,current_angular_velocity['pitch'], current_attitude['pitch'], -PIDpitch(0.8, 0.000, 0.00418, error()['pitch']), current_attitude['pitch'], linearisation('pitch', -PIDpitch(0.08, 0.000, 0.000, error()['pitch']), current_angular_velocity['pitch'], channel_input['throttle'], delta_t)])
         
         #print(pid_yaw(current_attitude['roll']),pid_yaw(current_attitude['yaw']))
 
@@ -420,10 +437,10 @@ def main():
                          "pitch":get_angular_acceleration(get_pitch_torque(),moment_of_inertia['pitch'])}
     
                                                           
-        current_attitude['roll'] += current_angular_velocity['roll'] * delta_t + (1/2) * current_angular_acceleration['roll'] * (delta_t)**2 
-        current_attitude['pitch'] += current_angular_velocity['pitch'] * delta_t + (1/2) * current_angular_acceleration['pitch'] * (delta_t)**2 
-        current_angular_velocity['roll'] += current_angular_acceleration['roll'] * delta_t
-        current_angular_velocity['pitch'] += current_angular_acceleration['pitch'] * delta_t
+        current_attitude['roll'] += current_angular_velocity['roll'] * delta_t + (1/2) * current_angular_acceleration['roll'] * (delta_t)**2 #+ random.choice([1, -1]) * random.uniform(0, 0.1)
+        current_attitude['pitch'] += current_angular_velocity['pitch'] * delta_t + (1/2) * current_angular_acceleration['pitch'] * (delta_t)**2 #+ random.choice([1, -1]) * random.uniform(0, 0.1)
+        current_angular_velocity['roll'] += current_angular_acceleration['roll'] * delta_t 
+        current_angular_velocity['pitch'] += current_angular_acceleration['pitch'] * delta_t  
 
 
         current_angular_velocity['yaw'] = get_yaw_angular_velocity()
@@ -440,33 +457,40 @@ def main():
         #print('current attitude:', current_attitude['yaw'])
         #print('error', error_runtime)
 
-
+        example.append([timer, current_attitude['pitch'], current_attitude['roll'], current_attitude['yaw']])
         
         Radius = 2
         
         a.axis = vector(p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([1,0,0])))[0],
-                        p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([1,0,0])))[1],
-                        p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([1,0,0])))[2])
+                       p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([1,0,0])))[1],
+                       p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([1,0,0])))[2])
 
         b.axis = vector(p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([0,1,0])))[0],
-                        p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([0,1,0])))[1],
-                        p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([0,1,0])))[2])
-
-
-        
-        
-        
+                       p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([0,1,0])))[1],
+                       p.as_matrix().dot(roll_matrix.as_matrix().dot(y.as_matrix().dot([0,1,0])))[2])
         time.sleep(delta_t)
+
+    file_path = os.path.join(os.path.expanduser('~'), 'Documents', 'pid.csv')
+
+    row_list = example
+    
+    try:
+        with open(file_path, 'w', newline='') as file:
+           writer = csv.writer(file)
+           writer.writerows(row_list)
+        print(f"File written successfully at {file_path}")
+    except Exception as e:
+       print(f"An error occurred while writing the file: {e}")
+
+        
+        
+        
+        
 
 
 main()
 #print(linearisation('pitch', -0.00000001, 1, 0.5, 0.1))
 
-"""note to self:
-- make a global variable max thrust, and drone dimensions.
-
-debugging, opengl, library
-"""
 
 
 
